@@ -9,6 +9,8 @@ import { upsertNote } from "@scholar-cli/tools/notes/store"
 import { updateResearch } from "@scholar-cli/tools/memory/research"
 import { addCitation } from "@scholar-cli/tools/cite/bibtex"
 import { upsertExperiment } from "@scholar-cli/tools/experiments/store"
+import { auditCitations, findTexFiles } from "@scholar-cli/tools/cite/audit"
+import { join as pathJoin } from "node:path"
 
 const SEARCH_DESCRIPTION = [
   "Search academic papers on arXiv and Semantic Scholar by keyword.",
@@ -426,6 +428,66 @@ export const ExperimentLogTool = Tool.define(
           title: `experiment: ${record.id} [${record.status}]`,
           metadata: { path: record.path, status: record.status },
           output: `Saved experiment log to ${record.path} (status: ${record.status}). Index regenerated at .research/EXPERIMENTS.md.`,
+        }
+      }),
+  }),
+)
+
+const AUDIT_DESCRIPTION = [
+  "Mechanically audit the manuscript's citations against .research/references.bib and the project's reading notes.",
+  "Reports: keys cited but missing from the bib (compile breakage), bib keys never cited (leftovers), and cited keys whose bib entry has no matching reading note (citing papers the project never read).",
+  "Pass explicit .tex file paths, or omit files to scan the worktree for .tex automatically.",
+  "This is the factual layer; judging whether a claim is actually supported by the cited paper requires reading the note (use the checker subagent).",
+].join(" ")
+
+export const AuditParameters = Schema.Struct({
+  files: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Manuscript .tex paths relative to the worktree; omitted = auto-discover",
+  }),
+})
+
+export const CiteAuditTool = Tool.define(
+  "cite_audit",
+  Effect.succeed({
+    description: AUDIT_DESCRIPTION,
+    parameters: AuditParameters,
+    execute: (params: Schema.Schema.Type<typeof AuditParameters>, _ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        const instance = yield* InstanceState.context
+        const result = yield* Effect.promise(async () => {
+          const paths = params.files?.length
+            ? params.files.map((f) => pathJoin(instance.worktree, f))
+            : await findTexFiles(instance.worktree)
+          return auditCitations(instance.worktree, paths)
+        })
+        const lines: string[] = [`Audited ${result.files.length} file(s): ${result.files.join(", ") || "(none found)"}`]
+        lines.push(`Cited keys: ${result.usedKeys.length}`)
+        if (result.missingInBib.length) {
+          lines.push("", "MISSING FROM references.bib (cited but undefined — fix first):")
+          for (const m of result.missingInBib) lines.push(`- ${m.key} (${m.files.join(", ")})`)
+        }
+        if (result.untraceableKeys.length) {
+          lines.push("", "NO READING NOTE (cited but the project never read these — dispatch reader or remove):")
+          for (const k of result.untraceableKeys) {
+            const title = result.bibEntries.find((e) => e.key === k)?.title
+            lines.push(`- ${k}${title ? ` — ${title}` : ""}`)
+          }
+        }
+        if (result.unusedBibKeys.length) {
+          lines.push("", "UNUSED BIB ENTRIES (in references.bib but never cited):")
+          for (const k of result.unusedBibKeys) lines.push(`- ${k}`)
+        }
+        if (!result.missingInBib.length && !result.untraceableKeys.length && !result.unusedBibKeys.length) {
+          lines.push("", "All citations resolve to bib entries backed by reading notes. Clean.")
+        }
+        return {
+          title: `cite audit: ${result.missingInBib.length} missing, ${result.untraceableKeys.length} unread`,
+          metadata: {
+            missing: result.missingInBib.length,
+            untraceable: result.untraceableKeys.length,
+            unused: result.unusedBibKeys.length,
+          },
+          output: lines.join("\n"),
         }
       }),
   }),

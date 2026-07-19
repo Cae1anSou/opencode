@@ -13,6 +13,8 @@ import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_READER from "./prompt/reader.txt"
+import PROMPT_CHECKER from "./prompt/checker.txt"
+import PROMPT_SYNTHESIZER from "./prompt/synthesizer.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -234,6 +236,49 @@ const layer = Layer.effect(
                 paper_fulltext: "allow",
                 paper_verify: "allow",
                 paper_note: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          synthesizer: {
+            name: "synthesizer",
+            description: `Cross-paper synthesis agent. Give it a research question plus a set of already-read papers (paper ids, or "all read papers"); it reads the full reading notes, builds a comparison table, surfaces where the papers disagree, and connects the answer to the project's research questions. Evidence comes strictly from the notes — papers without notes are reported, not guessed. Read-only.`,
+            prompt: PROMPT_SYNTHESIZER,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                paper_verify: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          checker: {
+            name: "checker",
+            description: `Referee-minded citation checker for academic manuscripts. Point it at the manuscript (.tex files, or let it auto-discover); it audits every claim-citation pair against the project's reading notes and reports unsupported claims, number mismatches, overclaims, and citations to unread papers. Read-only: it reports, it never edits.`,
+            prompt: PROMPT_CHECKER,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                cite_audit: "allow",
+                paper_verify: "allow",
                 external_directory: readonlyExternalDirectory,
               }),
               user,
