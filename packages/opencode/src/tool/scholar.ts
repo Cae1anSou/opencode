@@ -11,6 +11,7 @@ import { addCitation } from "@scholar-cli/tools/cite/bibtex"
 import { upsertExperiment } from "@scholar-cli/tools/experiments/store"
 import { auditCitations, findTexFiles } from "@scholar-cli/tools/cite/audit"
 import { paperOutline, paperSection } from "@scholar-cli/tools/fulltext/outline"
+import { importBibtex } from "@scholar-cli/tools/cite/import"
 import { join as pathJoin } from "node:path"
 
 const SEARCH_DESCRIPTION = [
@@ -580,6 +581,67 @@ export const CiteAuditTool = Tool.define(
             missing: result.missingInBib.length,
             untraceable: result.untraceableKeys.length,
             unused: result.unusedBibKeys.length,
+          },
+          output: lines.join("\n"),
+        }
+      }),
+  }),
+)
+
+const IMPORT_DESCRIPTION = [
+  "Batch-import an existing BibTeX library (exported from Zotero, EndNote, or any reference manager) into this project.",
+  "Pass either a .bib file path (relative to the worktree) or raw BibTeX text directly.",
+  "For each entry: creates a to_read reading note (never overwrites a note whose status has since progressed — safe to re-run) and appends the entry verbatim to .research/references.bib (so existing \\cite{} keys in a manuscript being migrated keep working), deduplicating by bib key.",
+  "Set download: true to also fetch open-access full text for entries with a DOI or arXiv id (best-effort; failures are reported per-entry, not fatal to the batch). Off by default — importing a large library can mean many downloads; ask the user before enabling it on more than a handful of entries.",
+].join(" ")
+
+export const ImportParameters = Schema.Struct({
+  source: Schema.String.annotate({
+    description: "Path to a .bib file (relative to the worktree) or raw BibTeX text",
+  }),
+  download: Schema.optional(Schema.Boolean).annotate({
+    description: "Also download open-access full text for entries with a doi/arXiv id (default false)",
+  }),
+})
+
+export const BibImportTool = Tool.define(
+  "bib_import",
+  Effect.succeed({
+    description: IMPORT_DESCRIPTION,
+    parameters: ImportParameters,
+    execute: (params: Schema.Schema.Type<typeof ImportParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "bib_import",
+          patterns: [params.source.slice(0, 80)],
+          always: ["*"],
+          metadata: { download: params.download ?? false },
+        })
+        const instance = yield* InstanceState.context
+        const source = params.source.startsWith("/") ? params.source : pathJoin(instance.worktree, params.source)
+        const looksLikePath = !params.source.includes("@")
+        const result = yield* Effect.promise(() =>
+          importBibtex(instance.worktree, looksLikePath ? source : params.source, { download: params.download }),
+        )
+        const lines = [
+          `Imported ${result.total} entries: ${result.notesCreated} new reading notes (${result.notesSkipped} already tracked), ${result.bibAppended} bib entries added (${result.bibSkipped} already present).`,
+        ]
+        if (params.download) {
+          lines.push(`Downloads: ${result.downloaded} succeeded, ${result.downloadFailed} failed.`)
+        }
+        const failures = result.entries.filter((e) => e.downloadError)
+        if (failures.length) {
+          lines.push("Download failures:")
+          for (const f of failures) lines.push(`- ${f.title}: ${f.downloadError}`)
+        }
+        return {
+          title: `bib_import: ${result.total} entries (${result.notesCreated} new)`,
+          metadata: {
+            total: result.total,
+            notesCreated: result.notesCreated,
+            bibAppended: result.bibAppended,
+            downloaded: result.downloaded,
+            downloadFailed: result.downloadFailed,
           },
           output: lines.join("\n"),
         }
