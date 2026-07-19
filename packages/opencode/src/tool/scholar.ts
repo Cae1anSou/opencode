@@ -10,6 +10,7 @@ import { updateResearch } from "@scholar-cli/tools/memory/research"
 import { addCitation } from "@scholar-cli/tools/cite/bibtex"
 import { upsertExperiment } from "@scholar-cli/tools/experiments/store"
 import { auditCitations, findTexFiles } from "@scholar-cli/tools/cite/audit"
+import { paperOutline, paperSection } from "@scholar-cli/tools/fulltext/outline"
 import { join as pathJoin } from "node:path"
 
 const SEARCH_DESCRIPTION = [
@@ -28,6 +29,13 @@ const FULLTEXT_DESCRIPTION = [
   "Fetch the full text of a paper for reading. Accepts an arXiv id, DOI, or URL.",
   "Resolves the best available carrier and falls back automatically: LaTeX source, then HTML, then PDF text extraction.",
   "Returns the extracted text; the attempts trace shows which carriers were tried. Long texts are truncated with the full content saved to a file.",
+  "For long papers, prefer reading section by section: call paper_outline first, then pass its section (by title or 1-based index) to this tool instead of pulling the whole text at once.",
+].join(" ")
+
+const OUTLINE_DESCRIPTION = [
+  "Get the section outline (table of contents) of a paper without fetching its full text.",
+  "Use this before paper_fulltext on long papers: skim the outline, then call paper_fulltext with a section title or index to read just what you need.",
+  "confidence is 'structural' for LaTeX/HTML (real \\section/<h1-6> markers) and 'heuristic' for PDF-only sources (layout guesswork — may miss or misfire; verify against the text if precision matters).",
 ].join(" ")
 
 const VERIFY_DESCRIPTION = [
@@ -125,6 +133,9 @@ export const FulltextParameters = Schema.Struct({
   hint: Schema.optional(Schema.Literals(["arxiv", "doi", "url"])).annotate({
     description: "Optional hint for how to interpret the identifier",
   }),
+  section: Schema.optional(Schema.String).annotate({
+    description: "Section title (fuzzy match) or 1-based index (e.g. '3' or '3.1') to read only that section instead of the full text. Get titles/indices from paper_outline first.",
+  }),
 })
 
 export const PaperFulltextTool = Tool.define(
@@ -140,6 +151,35 @@ export const PaperFulltextTool = Tool.define(
         always: ["*"],
         metadata: { paper: params.paper },
       })
+
+      if (params.section !== undefined) {
+        const idx = /^\d+$/.test(params.section.trim()) ? Number(params.section.trim()) : undefined
+        const query = idx !== undefined ? { index: idx } : { title: params.section }
+        const result = yield* Effect.promise(() =>
+          paperSection({ value: params.paper, hint: params.hint }, query),
+        )
+        const sectionMeta: { error?: string; format?: string; confidence?: string; section?: string; chars?: number } =
+          "error" in result
+            ? { error: result.error }
+            : { format: result.format, confidence: result.confidence, section: result.entry.title, chars: result.text.length }
+        if ("error" in result) {
+          return {
+            title: `fulltext: ${params.paper} § "${params.section}" (not found)`,
+            metadata: sectionMeta,
+            output: [
+              `Could not resolve section "${params.section}": ${result.error}`,
+              result.outline.length ? "Available sections:" : "No outline could be built for this paper.",
+              ...result.outline.map((o) => `${"  ".repeat(o.level - 1)}${o.index + 1}. ${o.title}`),
+            ].join("\n"),
+          }
+        }
+        return {
+          title: `fulltext: ${params.paper} § ${result.entry.title} (${result.format}, ${result.confidence})`,
+          metadata: sectionMeta,
+          output: result.text,
+        }
+      }
+
       const result = yield* Effect.promise(() => fulltextRun({ value: params.paper, hint: params.hint }))
       const metadata: { format: string; source?: string; chars: number; attempts: typeof result.attempts } = {
         format: result.format,
@@ -165,6 +205,51 @@ export const PaperFulltextTool = Tool.define(
         output: result.text,
       }
     }),
+  }),
+)
+
+export const OutlineParameters = Schema.Struct({
+  paper: Schema.String.annotate({ description: "arXiv id, DOI, or URL identifying the paper" }),
+  hint: Schema.optional(Schema.Literals(["arxiv", "doi", "url"])).annotate({
+    description: "Optional hint for how to interpret the identifier",
+  }),
+})
+
+export const PaperOutlineTool = Tool.define(
+  "paper_outline",
+  Effect.succeed({
+    description: OUTLINE_DESCRIPTION,
+    parameters: OutlineParameters,
+    execute: (params: Schema.Schema.Type<typeof OutlineParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "paper_fulltext",
+          patterns: [params.paper],
+          always: ["*"],
+          metadata: { paper: params.paper },
+        })
+        const result = yield* Effect.promise(() => paperOutline({ value: params.paper, hint: params.hint }))
+        const outlineMeta: { format: string; confidence: string; sections?: number } = {
+          format: result.format,
+          confidence: result.confidence,
+          sections: result.outline.length || undefined,
+        }
+        if (!result.outline.length) {
+          return {
+            title: `outline: ${params.paper} (unavailable)`,
+            metadata: outlineMeta,
+            output: `Could not build an outline. ${result.note ?? ""} Fall back to paper_fulltext for the full text.`,
+          }
+        }
+        return {
+          title: `outline: ${params.paper} (${result.format}, ${result.confidence}, ${result.outline.length} sections)`,
+          metadata: outlineMeta,
+          output: [
+            `Source: ${result.format} (${result.confidence}${result.note ? ` — ${result.note}` : ""})`,
+            ...result.outline.map((o) => `${"  ".repeat(o.level - 1)}${o.index + 1}. ${o.title}`),
+          ].join("\n"),
+        }
+      }),
   }),
 )
 

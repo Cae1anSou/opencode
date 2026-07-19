@@ -234,6 +234,7 @@ const layer = Layer.effect(
                 scholar_search: "allow",
                 paper_download: "allow",
                 paper_fulltext: "allow",
+                paper_outline: "allow",
                 paper_verify: "allow",
                 paper_note: "allow",
                 external_directory: readonlyExternalDirectory,
