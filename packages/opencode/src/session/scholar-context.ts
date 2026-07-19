@@ -3,11 +3,13 @@ import { Effect } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { researchPath } from "@scholar-cli/tools/memory/research"
 import { notesIndexPath } from "@scholar-cli/tools/notes/store"
+import { experimentsIndexPath } from "@scholar-cli/tools/experiments/store"
 
 // 注入预算:这两个文件是"廉价常驻上下文",必须小。超限截尾并提示 agent
 // 用 read 工具看全文,而不是把长文塞进每一轮请求。
 const RESEARCH_BUDGET = 6_000
 const NOTES_BUDGET = 4_000
+const EXPERIMENTS_BUDGET = 3_000
 
 function clip(content: string, budget: number, fullPath: string) {
   if (content.length <= budget) return content
@@ -23,10 +25,12 @@ export const system = Effect.fn("ScholarContext.system")(function* () {
   const ctx = yield* InstanceState.context
   const research = researchPath(ctx.worktree)
   const notes = notesIndexPath(ctx.worktree)
-  const [researchContent, notesContent] = yield* Effect.promise(() =>
+  const experiments = experimentsIndexPath(ctx.worktree)
+  const [researchContent, notesContent, experimentsContent] = yield* Effect.promise(() =>
     Promise.all([
       readFile(research, "utf8").catch(() => undefined),
       readFile(notes, "utf8").catch(() => undefined),
+      readFile(experiments, "utf8").catch(() => undefined),
     ]),
   )
   const out: string[] = []
@@ -47,6 +51,16 @@ export const system = Effect.fn("ScholarContext.system")(function* () {
         "Index of papers this project has read. Full structured notes live in .research/notes/<paperId>.md — read them before re-reading or re-summarizing a paper, and dispatch the reader subagent for papers not yet here.",
         clip(notesContent.trim(), NOTES_BUDGET, notes),
         "</reading_notes_index>",
+      ].join("\n"),
+    )
+  }
+  if (experimentsContent?.trim()) {
+    out.push(
+      [
+        `<experiments_index path="${experiments}">`,
+        "Index of this project's experiments. Full structured logs live in .research/experiments/<id>.md — record new runs and status changes via the experiment_log tool.",
+        clip(experimentsContent.trim(), EXPERIMENTS_BUDGET, experiments),
+        "</experiments_index>",
       ].join("\n"),
     )
   }

@@ -7,6 +7,8 @@ import { verifyPaper } from "@scholar-cli/tools/verify-paper"
 import { run as fulltextRun } from "@scholar-cli/tools/fulltext/run"
 import { upsertNote } from "@scholar-cli/tools/notes/store"
 import { updateResearch } from "@scholar-cli/tools/memory/research"
+import { addCitation } from "@scholar-cli/tools/cite/bibtex"
+import { upsertExperiment } from "@scholar-cli/tools/experiments/store"
 
 const SEARCH_DESCRIPTION = [
   "Search academic papers on arXiv and Semantic Scholar by keyword.",
@@ -299,6 +301,131 @@ export const ResearchUpdateTool = Tool.define(
           title: params.section ? `research memory: ${params.section} updated` : "research memory: log appended",
           metadata: { bytes: next.length },
           output: `RESEARCH.md updated (${next.length} chars). It is injected into future session context automatically.`,
+        }
+      }),
+  }),
+)
+
+const CITE_DESCRIPTION = [
+  "Add a citation to the project's bibliography (.research/references.bib) and get its BibTeX key for \\cite{}.",
+  "Pass a paperId that has a reading note and metadata is filled in automatically; otherwise pass title/authors/year (and doi/arxivId when known) explicitly.",
+  "Idempotent: citing the same paper again returns the existing key, so manuscript keys stay stable.",
+  "Only cite papers the project has actually read or verified — never invent bibliography entries.",
+].join(" ")
+
+export const CiteParameters = Schema.Struct({
+  paperId: Schema.optional(Schema.String).annotate({
+    description: "Project paper id (e.g. arxiv-1706.03762); metadata is resolved from its reading note",
+  }),
+  title: Schema.optional(Schema.String).annotate({ description: "Paper title (required if no note exists)" }),
+  authors: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Author names" }),
+  year: Schema.optional(Schema.Number).annotate({ description: "Publication year" }),
+  doi: Schema.optional(Schema.String).annotate({ description: "DOI, if known" }),
+  arxivId: Schema.optional(Schema.String).annotate({ description: "arXiv id, if known" }),
+  url: Schema.optional(Schema.String).annotate({ description: "URL, if no better identifier exists" }),
+  venue: Schema.optional(Schema.String).annotate({ description: "Journal or conference name, if known" }),
+})
+
+export const PaperCiteTool = Tool.define(
+  "paper_cite",
+  Effect.succeed({
+    description: CITE_DESCRIPTION,
+    parameters: CiteParameters,
+    execute: (params: Schema.Schema.Type<typeof CiteParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "paper_cite",
+          patterns: [params.paperId ?? params.title ?? "unknown"],
+          always: ["*"],
+          metadata: { paperId: params.paperId, title: params.title },
+        })
+        const instance = yield* InstanceState.context
+        const result = yield* Effect.promise(() =>
+          addCitation(instance.worktree, {
+            paperId: params.paperId,
+            title: params.title,
+            authors: params.authors ? [...params.authors] : undefined,
+            year: params.year,
+            doi: params.doi,
+            arxivId: params.arxivId,
+            url: params.url,
+            venue: params.venue,
+          }),
+        )
+        return {
+          title: `cite: \\cite{${result.key}}${result.existed ? " (existing)" : ""}`,
+          metadata: { key: result.key, existed: result.existed, path: result.path },
+          output: [
+            `BibTeX key: ${result.key}`,
+            `Use in LaTeX: \\cite{${result.key}}`,
+            result.existed ? "Entry already existed in references.bib (reused)." : "Entry appended to references.bib.",
+            "",
+            result.entry,
+          ].join("\n"),
+        }
+      }),
+  }),
+)
+
+const EXPERIMENT_DESCRIPTION = [
+  "Record or update a structured experiment log in .research/experiments/.",
+  "Upsert by id (short slug, e.g. sparse-attn-baseline); creating requires a title.",
+  "Link the experiment to its hypothesis, the papers its method came from (papers: paper ids), and the manuscript claims its results support (claims).",
+  "Body sections: Setup, Command, Results, Interpretation, Next Steps. Update status as it progresses (planned/running/done/failed).",
+  "Every write regenerates the .research/EXPERIMENTS.md index.",
+].join(" ")
+
+export const ExperimentParameters = Schema.Struct({
+  id: Schema.String.annotate({ description: "Stable experiment slug, e.g. sparse-attn-baseline" }),
+  title: Schema.optional(Schema.String).annotate({ description: "Experiment title (required when creating)" }),
+  status: Schema.optional(Schema.Literals(["planned", "running", "done", "failed"])).annotate({
+    description: "Experiment status",
+  }),
+  hypothesis: Schema.optional(Schema.String).annotate({
+    description: "The hypothesis this experiment tests (ideally one from RESEARCH.md)",
+  }),
+  papers: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Paper ids whose methods this experiment uses or compares against",
+  }),
+  claims: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Manuscript claims (free text or table/figure anchors) this experiment's results support",
+  }),
+  tags: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Topic tags" }),
+  body: Schema.optional(Schema.String).annotate({
+    description: "Full markdown body; replaces the existing body when provided",
+  }),
+})
+
+export const ExperimentLogTool = Tool.define(
+  "experiment_log",
+  Effect.succeed({
+    description: EXPERIMENT_DESCRIPTION,
+    parameters: ExperimentParameters,
+    execute: (params: Schema.Schema.Type<typeof ExperimentParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "experiment_log",
+          patterns: [params.id],
+          always: ["*"],
+          metadata: { id: params.id, status: params.status },
+        })
+        const instance = yield* InstanceState.context
+        const record = yield* Effect.promise(() =>
+          upsertExperiment(instance.worktree, {
+            id: params.id,
+            title: params.title,
+            status: params.status,
+            hypothesis: params.hypothesis,
+            papers: params.papers ? [...params.papers] : undefined,
+            claims: params.claims ? [...params.claims] : undefined,
+            tags: params.tags ? [...params.tags] : undefined,
+            body: params.body,
+          }),
+        )
+        return {
+          title: `experiment: ${record.id} [${record.status}]`,
+          metadata: { path: record.path, status: record.status },
+          output: `Saved experiment log to ${record.path} (status: ${record.status}). Index regenerated at .research/EXPERIMENTS.md.`,
         }
       }),
   }),
