@@ -60,4 +60,11 @@ describe("bibtex", () => {
     const dir = await mkdtemp(join(tmpdir(), "scholar-cite-"))
     expect(addCitation(dir, { paperId: "arxiv-9999.00000" })).rejects.toThrow("requires a title")
   })
+
+  test("without enrich: true, no network is attempted and enriched is false", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "scholar-cite-"))
+    const result = await addCitation(dir, { title: "Some Local Paper", authors: ["A. Author"], year: 2020 })
+    expect(result.enriched).toBe(false)
+    expect(result.entry).not.toContain("journal =")
+  })
 })

@@ -428,27 +428,36 @@ export const PaperCiteTool = Tool.define(
         })
         const instance = yield* InstanceState.context
         const result = yield* Effect.promise(() =>
-          addCitation(instance.worktree, {
-            paperId: params.paperId,
-            title: params.title,
-            authors: params.authors ? [...params.authors] : undefined,
-            year: params.year,
-            doi: params.doi,
-            arxivId: params.arxivId,
-            url: params.url,
-            venue: params.venue,
-          }),
+          addCitation(
+            instance.worktree,
+            {
+              paperId: params.paperId,
+              title: params.title,
+              authors: params.authors ? [...params.authors] : undefined,
+              year: params.year,
+              doi: params.doi,
+              arxivId: params.arxivId,
+              url: params.url,
+              venue: params.venue,
+            },
+            // 缺 venue/doi 时尽力从 Semantic Scholar 补全,失败静默降级——
+            // 见 addCitation 内部注释,不影响引用条目本身的建立速度。
+            { enrich: true },
+          ),
         )
         return {
-          title: `cite: \\cite{${result.key}}${result.existed ? " (existing)" : ""}`,
-          metadata: { key: result.key, existed: result.existed, path: result.path },
+          title: `cite: \\cite{${result.key}}${result.existed ? " (existing)" : ""}${result.enriched ? " (metadata enriched)" : ""}`,
+          metadata: { key: result.key, existed: result.existed, enriched: result.enriched, path: result.path },
           output: [
             `BibTeX key: ${result.key}`,
             `Use in LaTeX: \\cite{${result.key}}`,
             result.existed ? "Entry already existed in references.bib (reused)." : "Entry appended to references.bib.",
+            result.enriched ? "Metadata (venue/doi) was auto-filled from Semantic Scholar." : undefined,
             "",
             result.entry,
-          ].join("\n"),
+          ]
+            .filter((line): line is string => line !== undefined)
+            .join("\n"),
         }
       }),
   }),

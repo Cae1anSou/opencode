@@ -20,6 +20,8 @@ export interface PaperMetadata {
   pdfUrl?: string
   arxivId?: string
   doi?: string
+  /** 期刊/会议名——只有 Semantic Scholar 有;arXiv API 不返回。 */
+  venue?: string
 }
 
 function text(raw: string, tag: string) {
@@ -83,7 +85,7 @@ async function arxiv(args: SearchScholarArgs): Promise<PaperMetadata[]> {
   return out
 }
 
-export const SEMANTIC_FIELDS = "title,abstract,year,authors,citationCount,openAccessPdf,externalIds"
+export const SEMANTIC_FIELDS = "title,abstract,year,authors,citationCount,openAccessPdf,externalIds,venue"
 
 /** Semantic Scholar 的 paper 行对象到 `PaperMetadata` 的映射，search 和 verify 两条路径共用。 */
 export function semanticToPaper(it: unknown): PaperMetadata | undefined {
@@ -134,6 +136,7 @@ export function semanticToPaper(it: unknown): PaperMetadata | undefined {
     pdfUrl: typeof pdf === "string" ? pdf : undefined,
     arxivId,
     doi,
+    venue: "venue" in row && typeof row.venue === "string" && row.venue ? row.venue : undefined,
   }
 }
 

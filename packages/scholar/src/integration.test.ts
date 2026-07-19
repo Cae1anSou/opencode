@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test"
 import { searchScholar } from "./search-scholar"
 import { downloadPaper } from "./download-paper"
 import { paperOutline, paperSection } from "./fulltext/outline"
+import { addCitation } from "./cite/bibtex"
 
 const net = process.env.RUN_NET_TESTS === "1"
 
@@ -41,4 +42,20 @@ describe("integration", () => {
       if ("entry" in section) expect(section.text.length).toBeGreaterThan(50)
     }
   }, 20000)
+
+  test.if(net)("paper_cite enrichment fills doi/venue from Semantic Scholar for a real paper", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "scholar-cite-enrich-"))
+    const result = await addCitation(
+      dir,
+      { title: "Attention Is All You Need", authors: ["Ashish Vaswani"], year: 2017 },
+      { enrich: true },
+    )
+    // Semantic Scholar coverage for venue/doi varies by paper; only assert
+    // internal consistency (enriched=true implies the entry actually gained
+    // a journal/doi field), not that a specific field is present.
+    expect(typeof result.enriched).toBe("boolean")
+    if (result.enriched) {
+      expect(/journal = |doi = /.test(result.entry)).toBe(true)
+    }
+  }, 15000)
 })

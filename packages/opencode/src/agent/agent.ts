@@ -15,6 +15,7 @@ import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_READER from "./prompt/reader.txt"
 import PROMPT_CHECKER from "./prompt/checker.txt"
 import PROMPT_SYNTHESIZER from "./prompt/synthesizer.txt"
+import PROMPT_WRITER from "./prompt/writer.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -237,6 +238,31 @@ const layer = Layer.effect(
                 paper_outline: "allow",
                 paper_verify: "allow",
                 paper_note: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          writer: {
+            name: "writer",
+            description: `Drafting agent for manuscript sections. Give it a writing task (which section/paragraph, for which .tex file, what argument it should make); it drafts from the project's reading notes only — never invents claims or citations — gets stable BibTeX keys via paper_cite, writes the file, and self-checks with cite_audit before replying. Refuses to write claims with no supporting note rather than padding with generic text.`,
+            prompt: PROMPT_WRITER,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                write: "allow",
+                edit: "allow",
+                paper_cite: "allow",
+                cite_audit: "allow",
+                paper_verify: "allow",
                 external_directory: readonlyExternalDirectory,
               }),
               user,
