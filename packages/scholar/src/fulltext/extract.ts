@@ -3,9 +3,30 @@ import { join } from "node:path"
 import { mkdtemp, readdir, rm, unlink, writeFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { createHash } from "node:crypto"
 import type { ExtractResult, FetchResult } from "./types"
 
 const run = promisify(execFile)
+
+/**
+ * 进程内、按内容寻址的记忆化——不是网络缓存(那层已经在 cache.ts 按 URL 做了)。
+ * 这里要消除的是 tar 解包/pdftotext 这类子进程调用的重复执行:同一份已下载字节,
+ * paper_outline 和 paper_fulltext(section=...) 会在一次精读会话里反复传进来
+ * (reader 被要求按小节连续读长论文),没有这层的话每次都要重新起 N 个子进程。
+ * 用内容 hash 而不是 URL 做 key,是因为这两个函数的入参只有 body,调用方
+ * (extract.ts 自己的 latex()/pdf(),以及 outline.ts)不必额外传 URL 才能命中。
+ */
+function memoizeByContent<T>(fn: (body: Uint8Array) => Promise<T>) {
+  const cache = new Map<string, Promise<T>>()
+  return (body: Uint8Array): Promise<T> => {
+    const key = createHash("sha1").update(body).digest("hex")
+    const hit = cache.get(key)
+    if (hit) return hit
+    const p = fn(body)
+    cache.set(key, p)
+    return p
+  }
+}
 
 function txt(body: Uint8Array) {
   return new TextDecoder("utf-8", { fatal: false }).decode(body)
@@ -48,7 +69,7 @@ export function isGzip(body: Uint8Array) {
  * outline.ts 需要这份原始文本来定位 \section{...} 边界;extract() 的纯文本
  * 路径在此基础上再跑 stripLatex。gzip 归档走 tar 解包,纯文本源直接返回。
  */
-export async function rawLatexSource(body: Uint8Array): Promise<{ raw: string; note?: string }> {
+async function rawLatexSourceUncached(body: Uint8Array): Promise<{ raw: string; note?: string }> {
   if (!isGzip(body)) {
     return { raw: txt(body) }
   }
@@ -92,6 +113,8 @@ export async function rawLatexSource(body: Uint8Array): Promise<{ raw: string; n
     await unlink(inPath).catch(() => undefined)
   }
 }
+
+export const rawLatexSource = memoizeByContent(rawLatexSourceUncached)
 
 /**
  * 多文件 LaTeX 源码按 tar 列表字母序简单拼接会打乱文档结构(比如
@@ -151,7 +174,7 @@ async function latex(body: Uint8Array): Promise<ExtractResult> {
  * spaces). outline.ts needs the line structure to heuristically spot headings;
  * the plain-text extraction path below collapses whitespace itself.
  */
-export async function pdfLayoutText(body: Uint8Array): Promise<string | undefined> {
+async function pdfLayoutTextUncached(body: Uint8Array): Promise<string | undefined> {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const inPath = join(tmpdir(), `${id}.pdf`)
   await writeFile(inPath, body)
@@ -165,6 +188,8 @@ export async function pdfLayoutText(body: Uint8Array): Promise<string | undefine
     await unlink(inPath).catch(() => undefined)
   }
 }
+
+export const pdfLayoutText = memoizeByContent(pdfLayoutTextUncached)
 
 async function pdf(body: Uint8Array): Promise<ExtractResult> {
   const layout = await pdfLayoutText(body)
