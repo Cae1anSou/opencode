@@ -24,12 +24,13 @@ export interface PaperMetadata {
   venue?: string
 }
 
-function text(raw: string, tag: string) {
+/** 导出供 arxiv/digest.ts 复用,避免重写一遍 arXiv Atom feed 的字段抽取。 */
+export function text(raw: string, tag: string) {
   const m = raw.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))
   return m?.[1]?.replace(/\s+/g, " ").trim() || ""
 }
 
-function list(raw: string, tag: string) {
+export function list(raw: string, tag: string) {
   const out: string[] = []
   const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi")
   let m: RegExpExecArray | null

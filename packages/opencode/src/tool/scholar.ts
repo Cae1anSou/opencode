@@ -12,6 +12,7 @@ import { upsertExperiment } from "@scholar-cli/tools/experiments/store"
 import { auditCitations, findTexFiles } from "@scholar-cli/tools/cite/audit"
 import { paperOutline, paperSection } from "@scholar-cli/tools/fulltext/outline"
 import { importBibtex } from "@scholar-cli/tools/cite/import"
+import { arxivDigest } from "@scholar-cli/tools/arxiv/digest"
 import { join as pathJoin } from "node:path"
 
 const SEARCH_DESCRIPTION = [
@@ -643,6 +644,65 @@ export const BibImportTool = Tool.define(
             downloaded: result.downloaded,
             downloadFailed: result.downloadFailed,
           },
+          output: lines.join("\n"),
+        }
+      }),
+  }),
+)
+
+const DIGEST_DESCRIPTION = [
+  "Search arXiv for recently submitted papers on given topics, excluding papers this project already tracks (has a reading note for, at any status).",
+  "Topics must be given explicitly — read .research/RESEARCH.md yourself first and summarize its research questions into a few precise search topics; do not guess topics from a vague user request.",
+  "Sorted by arXiv submission date descending, so results skew toward what's genuinely new. Multi-topic hits are ranked first (more likely relevant). Use this to answer 'what's new in my area' — not for locating a specific known paper (use scholar_search for that).",
+].join(" ")
+
+export const DigestParameters = Schema.Struct({
+  topics: Schema.Array(
+    Schema.Struct({
+      topic: Schema.String.annotate({ description: "Search query, e.g. 'sparse attention long context'" }),
+      maxResults: Schema.optional(Schema.Number).annotate({ description: "Results to fetch for this topic (default 10, max 50)" }),
+    }),
+  ).annotate({ description: "One or more topics to search for" }),
+})
+
+export const ArxivDigestTool = Tool.define(
+  "arxiv_digest",
+  Effect.succeed({
+    description: DIGEST_DESCRIPTION,
+    parameters: DigestParameters,
+    execute: (params: Schema.Schema.Type<typeof DigestParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "arxiv_digest",
+          patterns: params.topics.map((t) => t.topic),
+          always: ["*"],
+          metadata: { topics: params.topics.map((t) => t.topic) },
+        })
+        const instance = yield* InstanceState.context
+        const result = yield* Effect.promise(() => arxivDigest(instance.worktree, [...params.topics]))
+        if (!result.entries.length) {
+          return {
+            title: `arxiv digest: no new papers (${result.excludedAlreadyTracked} already tracked)`,
+            metadata: { found: 0, excludedAlreadyTracked: result.excludedAlreadyTracked },
+            output: `No new papers found for: ${result.queriedTopics.join(", ")}. ${result.excludedAlreadyTracked} matching result(s) were already tracked by this project.`,
+          }
+        }
+        const lines = [
+          `${result.entries.length} new paper(s) for: ${result.queriedTopics.join(", ")} (${result.excludedAlreadyTracked} already tracked, excluded)`,
+          "",
+          ...result.entries.map((e, i) =>
+            [
+              `${i + 1}. ${e.title} — arxiv:${e.arxivId} [${e.matchedTopics.join(", ")}]`,
+              `   authors: ${e.authors.slice(0, 5).join(", ")}${e.authors.length > 5 ? " et al." : ""}`,
+              e.abstract ? `   abstract: ${e.abstract.slice(0, 300)}${e.abstract.length > 300 ? "…" : ""}` : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          ),
+        ]
+        return {
+          title: `arxiv digest: ${result.entries.length} new paper(s)`,
+          metadata: { found: result.entries.length, excludedAlreadyTracked: result.excludedAlreadyTracked },
           output: lines.join("\n"),
         }
       }),

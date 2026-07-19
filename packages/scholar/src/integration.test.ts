@@ -6,6 +6,7 @@ import { searchScholar } from "./search-scholar"
 import { downloadPaper } from "./download-paper"
 import { paperOutline, paperSection } from "./fulltext/outline"
 import { addCitation } from "./cite/bibtex"
+import { arxivDigest } from "./arxiv/digest"
 
 const net = process.env.RUN_NET_TESTS === "1"
 
@@ -57,5 +58,18 @@ describe("integration", () => {
     if (result.enriched) {
       expect(/journal = |doi = /.test(result.entry)).toBe(true)
     }
+  }, 15000)
+
+  test.if(net)("arxiv digest finds real recent papers and excludes an already-tracked one", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "scholar-digest-"))
+    // pin a well-known paper as "already tracked" for a broad topic likely to
+    // still surface plenty of other real results even with it excluded.
+    const { upsertNote } = await import("./notes/store")
+    await upsertNote(dir, { paperId: "arxiv-1706.03762", title: "Attention Is All You Need", status: "to_read" })
+
+    const result = await arxivDigest(dir, [{ topic: "large language models", maxResults: 15 }])
+    expect(result.entries.length).toBeGreaterThan(0)
+    expect(result.entries.every((e) => e.arxivId !== "1706.03762")).toBe(true)
+    expect(result.entries[0].matchedTopics).toEqual(["large language models"])
   }, 15000)
 })
