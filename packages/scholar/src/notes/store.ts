@@ -23,7 +23,7 @@ export function notesDir(projectDir: string) {
   return join(root(projectDir), "notes")
 }
 
-export function indexPath(projectDir: string) {
+export function notesIndexPath(projectDir: string) {
   return join(root(projectDir), "NOTES.md")
 }
 
@@ -126,7 +126,7 @@ export async function upsertNote(projectDir: string, input: NoteInput): Promise<
     const path = notePath(projectDir, input.paperId)
     await writeFile(path, content)
     const all = await listNotes(projectDir)
-    await writeFile(indexPath(projectDir), renderIndex(all))
+    await writeFile(notesIndexPath(projectDir), renderIndex(all))
     return { ...meta, body, path }
   })
 }

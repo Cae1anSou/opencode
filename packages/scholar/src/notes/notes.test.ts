@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { parse, serialize } from "./frontmatter"
-import { getNote, indexPath, listNotes, upsertNote } from "./store"
+import { getNote, notesIndexPath, listNotes, upsertNote } from "./store"
 
 describe("frontmatter", () => {
   test("roundtrip with arrays, numbers, and colons in values", () => {
@@ -49,7 +49,7 @@ describe("notes store", () => {
     expect(fetched?.body).toContain("Multi-head attention.")
     expect(fetched?.year).toBe(2017)
 
-    const index = await readFile(indexPath(dir), "utf8")
+    const index = await readFile(notesIndexPath(dir), "utf8")
     expect(index).toContain("[read] **Attention Is All You Need** (2017)")
     expect(index).toContain("Self-attention alone suffices")
   })
@@ -63,7 +63,7 @@ describe("notes store", () => {
     ])
     const notes = await listNotes(dir)
     expect(notes.length).toBe(3)
-    const index = await readFile(indexPath(dir), "utf8")
+    const index = await readFile(notesIndexPath(dir), "utf8")
     expect(index).toContain("Paper One")
     expect(index).toContain("Paper Two")
     expect(index).toContain("Weird Id")

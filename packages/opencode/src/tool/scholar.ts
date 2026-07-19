@@ -6,6 +6,7 @@ import { downloadPaper } from "@scholar-cli/tools/download-paper"
 import { verifyPaper } from "@scholar-cli/tools/verify-paper"
 import { run as fulltextRun } from "@scholar-cli/tools/fulltext/run"
 import { upsertNote } from "@scholar-cli/tools/notes/store"
+import { updateResearch } from "@scholar-cli/tools/memory/research"
 
 const SEARCH_DESCRIPTION = [
   "Search academic papers on arXiv and Semantic Scholar by keyword.",
@@ -250,6 +251,54 @@ export const PaperNoteTool = Tool.define(
           title: `note: ${record.title || record.paperId} [${record.status}]`,
           metadata: { path: record.path, status: record.status },
           output: `Saved note to ${record.path} (status: ${record.status}). Index regenerated at .research/NOTES.md.`,
+        }
+      }),
+  }),
+)
+
+const RESEARCH_DESCRIPTION = [
+  "Update the project's research memory (.research/RESEARCH.md).",
+  "Replace one of the living sections (questions / hypotheses / findings) with new content, and/or append a dated entry to the Log timeline.",
+  "The memory is injected into every session's context, so keep sections short and current: prune resolved questions, record decisions in findings, and log milestones.",
+].join(" ")
+
+export const ResearchParameters = Schema.Struct({
+  section: Schema.optional(Schema.Literals(["questions", "hypotheses", "findings"])).annotate({
+    description: "Which living section to replace (requires content)",
+  }),
+  content: Schema.optional(Schema.String).annotate({
+    description: "Full new markdown content for the chosen section",
+  }),
+  log: Schema.optional(Schema.String).annotate({
+    description: "Timeline entry to append to the Log section (dated automatically)",
+  }),
+})
+
+export const ResearchUpdateTool = Tool.define(
+  "research_update",
+  Effect.succeed({
+    description: RESEARCH_DESCRIPTION,
+    parameters: ResearchParameters,
+    execute: (params: Schema.Schema.Type<typeof ResearchParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "research_update",
+          patterns: [params.section ?? "log"],
+          always: ["*"],
+          metadata: { section: params.section, log: params.log },
+        })
+        const instance = yield* InstanceState.context
+        const next = yield* Effect.promise(() =>
+          updateResearch(instance.worktree, {
+            section: params.section,
+            content: params.content,
+            log: params.log,
+          }),
+        )
+        return {
+          title: params.section ? `research memory: ${params.section} updated` : "research memory: log appended",
+          metadata: { bytes: next.length },
+          output: `RESEARCH.md updated (${next.length} chars). It is injected into future session context automatically.`,
         }
       }),
   }),
