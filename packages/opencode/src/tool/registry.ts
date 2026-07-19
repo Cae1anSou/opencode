@@ -26,7 +26,7 @@ import { Plugin } from "../plugin"
 import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
-import { ScholarSearchTool, PaperDownloadTool, PaperFulltextTool, PaperVerifyTool } from "./scholar"
+import { ScholarSearchTool, PaperDownloadTool, PaperFulltextTool, PaperVerifyTool, PaperNoteTool } from "./scholar"
 import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
@@ -114,6 +114,7 @@ const layer = Layer.effect(
     const paperDownload = yield* PaperDownloadTool
     const paperFulltext = yield* PaperFulltextTool
     const paperVerify = yield* PaperVerifyTool
+    const paperNote = yield* PaperNoteTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -227,6 +228,7 @@ const layer = Layer.effect(
           paperDownload: Tool.init(paperDownload),
           paperFulltext: Tool.init(paperFulltext),
           paperVerify: Tool.init(paperVerify),
+          paperNote: Tool.init(paperNote),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
@@ -251,6 +253,7 @@ const layer = Layer.effect(
             tool.paperDownload,
             tool.paperFulltext,
             tool.paperVerify,
+            tool.paperNote,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),

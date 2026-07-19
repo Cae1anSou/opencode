@@ -5,6 +5,7 @@ import { searchScholar, type PaperMetadata } from "@scholar-cli/tools/search-sch
 import { downloadPaper } from "@scholar-cli/tools/download-paper"
 import { verifyPaper } from "@scholar-cli/tools/verify-paper"
 import { run as fulltextRun } from "@scholar-cli/tools/fulltext/run"
+import { upsertNote } from "@scholar-cli/tools/notes/store"
 
 const SEARCH_DESCRIPTION = [
   "Search academic papers on arXiv and Semantic Scholar by keyword.",
@@ -192,5 +193,64 @@ export const PaperVerifyTool = Tool.define(
         output: JSON.stringify(result, null, 2),
       }
     }),
+  }),
+)
+
+const NOTE_DESCRIPTION = [
+  "Save or update the structured reading note for a paper in the project's literature store (.research/notes/).",
+  "Upsert semantics: creating a note requires a title; later calls merge metadata and can replace the body.",
+  "The body should follow the standard sections: Problem & Motivation, Method, Experiments & Results, Relevance to This Project, Limitations & Open Questions, Key References.",
+  "Every write regenerates the .research/NOTES.md index. Prefer this over writing note files directly.",
+].join(" ")
+
+export const NoteParameters = Schema.Struct({
+  paperId: Schema.String.annotate({ description: "Paper id, e.g. arxiv-1706.03762 or doi-10.1145-xxx" }),
+  title: Schema.optional(Schema.String).annotate({ description: "Paper title (required when creating a new note)" }),
+  status: Schema.optional(Schema.Literals(["to_read", "reading", "read"])).annotate({
+    description: "Reading status",
+  }),
+  year: Schema.optional(Schema.Number).annotate({ description: "Publication year" }),
+  authors: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Author names" }),
+  tags: Schema.optional(Schema.Array(Schema.String)).annotate({ description: "Topic tags" }),
+  thesis: Schema.optional(Schema.String).annotate({
+    description: "One-sentence thesis of the paper — shown in the NOTES.md index",
+  }),
+  body: Schema.optional(Schema.String).annotate({
+    description: "Full markdown body of the note; replaces the existing body when provided",
+  }),
+})
+
+export const PaperNoteTool = Tool.define(
+  "paper_note",
+  Effect.succeed({
+    description: NOTE_DESCRIPTION,
+    parameters: NoteParameters,
+    execute: (params: Schema.Schema.Type<typeof NoteParameters>, ctx: Tool.Context) =>
+      Effect.gen(function* () {
+        yield* ctx.ask({
+          permission: "paper_note",
+          patterns: [params.paperId],
+          always: ["*"],
+          metadata: { paperId: params.paperId, status: params.status },
+        })
+        const instance = yield* InstanceState.context
+        const record = yield* Effect.promise(() =>
+          upsertNote(instance.worktree, {
+            paperId: params.paperId,
+            title: params.title,
+            status: params.status,
+            year: params.year,
+            authors: params.authors ? [...params.authors] : undefined,
+            tags: params.tags ? [...params.tags] : undefined,
+            thesis: params.thesis,
+            body: params.body,
+          }),
+        )
+        return {
+          title: `note: ${record.title || record.paperId} [${record.status}]`,
+          metadata: { path: record.path, status: record.status },
+          output: `Saved note to ${record.path} (status: ${record.status}). Index regenerated at .research/NOTES.md.`,
+        }
+      }),
   }),
 )
