@@ -26,6 +26,7 @@ import { Plugin } from "../plugin"
 import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
+import { ScholarSearchTool, PaperDownloadTool, PaperFulltextTool, PaperVerifyTool } from "./scholar"
 import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
@@ -109,6 +110,10 @@ const layer = Layer.effect(
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const scholarSearch = yield* ScholarSearchTool
+    const paperDownload = yield* PaperDownloadTool
+    const paperFulltext = yield* PaperFulltextTool
+    const paperVerify = yield* PaperVerifyTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -218,6 +223,10 @@ const layer = Layer.effect(
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          scholarSearch: Tool.init(scholarSearch),
+          paperDownload: Tool.init(paperDownload),
+          paperFulltext: Tool.init(paperFulltext),
+          paperVerify: Tool.init(paperVerify),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
@@ -238,6 +247,10 @@ const layer = Layer.effect(
             tool.search,
             tool.skill,
             tool.patch,
+            tool.scholarSearch,
+            tool.paperDownload,
+            tool.paperFulltext,
+            tool.paperVerify,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
