@@ -87,14 +87,30 @@ if (conflicts.length > 0) {
 }
 
 step("清理已删除包路径下可能被静默复活的文件")
+// 关键:只看已删路径本身的状态,不能查全局 git status——这时候合并里其余
+// 保留包的正常改动还没提交,混在一起会把合法的上游改动误报成"复活文件"。
+// 另一个反直觉的地方:一个被成功清理的"复活文件"(合并时新增、随即被
+// git rm 删除)相对 HEAD 净效果是"没有变化",清理*之后*查状态永远是空的——
+// 真正有信息量的是清理*之前*的状态,清理之后只用来确认真的清空了。
+const before = await $`git status --porcelain -- ${PRUNED_PATHS}`.text()
 for (const p of PRUNED_PATHS) {
   await $`git rm -rf --ignore-unmatch ${p}`.quiet()
 }
-const staged = await $`git status --porcelain`.text()
-if (staged.trim()) {
-  console.log("  发现复活文件,已重新删除并暂存:")
+const after = await $`git status --porcelain -- ${PRUNED_PATHS}`.text()
+if (after.trim()) {
+  console.log("  \x1b[31m清理后仍有残留,需要人工检查:\x1b[0m")
   console.log(
-    staged
+    after
+      .trim()
+      .split("\n")
+      .map((l) => `    ${l}`)
+      .join("\n"),
+  )
+  process.exit(1)
+} else if (before.trim()) {
+  console.log("  发现并清理了已删路径下的内容(冲突或静默复活):")
+  console.log(
+    before
       .trim()
       .split("\n")
       .map((l) => `    ${l}`)
