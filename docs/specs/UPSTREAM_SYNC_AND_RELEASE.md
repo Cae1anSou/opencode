@@ -9,6 +9,21 @@
 
 一个直接后果:根目录 `README.md` 从上游的 OpenCode 产品介绍替换成了 Scholar CLI 自己的介绍。这意味着**每次 `git merge upstream/dev` 时 README.md 几乎必定冲突**——上游会持续修改它自己的 README,我们也有自己的内容。解决方式固定:冲突时保留我们的版本(`git checkout --ours README.md && git add README.md`),不要尝试合并两份内容。这是刻意的取舍,不是遗留问题:比起为了减少这一处必然冲突而让仓库首页继续显示"OpenCode",宁可接受这个冲突点。
 
+## 已删除的上游包(2026-07-20,ADR-019)
+
+`packages/` 下与 Scholar CLI 运行时无关的 15 个上游包(桌面壳、Web 站点、托管服务、企业版、Slack 机器人、组件预览等)已物理删除,连带多语言 README、SST 部署配置(`infra/`、`sst.config.ts`)、专属 CI workflow。决策与验证过程见 [ADR-019](../adr/ADR-019-prune-unused-upstream-packages.md)。
+
+这意味着合并面清单从"零冲突"变成"这些路径上必然偶发冲突"。固定处理方式:合并出现在下列路径的冲突时一律接受删除(不合并上游的改动内容),合并完成后、提交合并结果前跑一次:
+
+```sh
+git rm -rf --ignore-unmatch packages/app packages/desktop packages/web packages/console \
+  packages/stats packages/enterprise packages/slack packages/storybook packages/session-ui \
+  packages/identity packages/client packages/function packages/httpapi-codegen packages/sdk-next \
+  packages/containers infra sst.config.ts sst-env.d.ts
+```
+
+若上游对根 `package.json` 的 `scripts`/`workspaces.packages` 做了改动且合并产生冲突,同理:凡是指向上述已删包的条目一律不保留。
+
 ## 合并面清单
 
 我们对上游文件的改动刻意保持"加法优先":绝大部分代码在全新文件里,上游文件只有少数插入点。未来 `git merge upstream/dev` 时,冲突只可能出现在下面这些位置,按此清单逐一核对即可,不需要通读 diff。

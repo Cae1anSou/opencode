@@ -17,12 +17,18 @@
 
 ## 仓库结构
 
+这不是完整的 OpenCode monorepo——桌面壳、Web 站点、托管服务(console/stats)、企业版、Slack 机器人、组件预览等 15 个与 CLI 无关的上游包已经物理删除(理由与后果见 [ADR-019](docs/adr/ADR-019-prune-unused-upstream-packages.md)),`packages/` 下只留 CLI 真正用到的那部分:
+
 ```text
 scholar-cli/
 ├── packages/
 │   ├── scholar/          # 领域层:独立 workspace 包,零外部依赖,详见其 README
-│   ├── opencode/          # 宿主 CLI 本体(上游代码 + 我们的挂接点,见下)
-│   └── ...                # 其余均为上游原有 workspace(app/tui/desktop/console/...)
+│   ├── opencode/          # CLI 入口 + 我们的挂接点(见下)
+│   ├── tui/                # 终端交互界面,CLI 直接依赖,不是独立 GUI 产品
+│   ├── server/               # 会话/工具编排的服务端部分
+│   ├── core/                   # 共享领域类型、数据库、Effect 基础设施
+│   └── sdk/, plugin/, llm/, protocol/, schema/, script/, codemode/, ui/, cli/
+│                                 # 均为 CLI 运行时的直接或传递依赖
 ├── docs/
 │   ├── product/            # 产品定义(现行有效):愿景 v2、旧 ADR 处置清单
 │   ├── architecture/        # 架构研究:codex / opencode / claude-code 编排层分析
