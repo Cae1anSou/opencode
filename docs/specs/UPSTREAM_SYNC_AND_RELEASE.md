@@ -50,6 +50,8 @@ bun run sync-upstream
 
 ## 回归基线(ADR-014 落实记录)
 
+2026-07-20(第二次同步,验证上次的 bug 修复)合并 upstream/dev 至 `9105f35966`(3 个提交)。5 处 modify/delete 冲突,全部落在 `packages/app`/`packages/session-ui` 已删路径内,脚本正确接受删除;"清理复活文件"步骤这次正确报告"没有复活文件"(未再把其他保留包的正常改动误判为复活,确认上次的检测逻辑修复生效)。全部验证一次性干净通过,无需重跑:宿主回归 763 测试 0 失败,领域层 56 测试 0 失败,typecheck 15/15,无 flake。手工冒烟同上次口径:CLI 启动、工具注册表/agent 模块加载、真实搜索+笔记写入链路均正常。
+
 2026-07-20(首次真实上游同步,`/sync-upstream` skill 与 `bun run sync-upstream` 脚本的首次实战验证)合并 `upstream/dev`(3fc5af6dd1..5586f9675e,16 个提交),8 处 modify/delete 冲突全部落在已删除的 15 个包路径内(`packages/app`、`packages/session-ui`),脚本正确识别并接受删除,无 README.md 冲突,无插入点冲突。过程中发现并修复脚本自身一个 bug:清理"复活文件"的检测逻辑原来查的是清理**之后**的全局 `git status`,一是会把同一次合并里其余保留包(`packages/llm`、`packages/opencode/src/provider`)的正常改动误判成"复活文件",二是清理成功的复活文件相对 HEAD 净效果本就是"无变化",清理后查状态永远是空——两个原因都指向该查清理**之前**、且只查已删路径本身的状态。已修复(见 `script/sync-upstream.ts`)。测试阶段 `test/tool/shell.test.ts` 一个用例失败,单独重跑 23/23 全过,判定为并行负载 flake、非合并引入的真实回归(与此前 `prompt.test.ts` 那次同一性质)。修复后重跑全部验证:宿主回归 763 测试 0 失败,领域层 56 测试 0 失败,typecheck 15/15 全过。手工冒烟(在非交互环境下的可行替代):CLI `--version` 正常启动、工具注册表与 agent 模块正常加载、真实网络搜索一篇论文并写入结构化笔记全链路跑通(未能驱动完整交互式 reader 派发,因当前环境无法进行真实 LLM 对话)。
 
 2026-07-20(功能规划四批全部完成 + 清理 + 性能优化后终复核)宿主受影响区域(test/agent + test/session + test/tool,41 个文件)763 测试 0 失败;领域层(packages/scholar,含 RUN_NET_TESTS=1)56 测试 0 失败,覆盖章节大纲、下载、引用元数据补全、arXiv 摘报的真实网络端到端验证。至此 12 个内置工具、4 个领域子 agent 全部有回归覆盖。
