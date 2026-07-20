@@ -32,3 +32,6 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# Scholar CLI: per-project literature/memory data, never belongs in the harness repo itself
+.research/
