@@ -34,7 +34,15 @@ git rm -rf --ignore-unmatch packages/app packages/desktop packages/web packages/
 
 ## 同步节奏
 
-建议每一至两周 `git fetch upstream && git merge upstream/dev`,合并后跑三件事:`packages/scholar` 的 bun test(领域层不该受影响)、`packages/opencode` 的 typecheck 与 test/agent + test/session + test/tool(我们插入点所在区域)、以及一次手工冒烟(搜索一篇论文并派 reader)。上游 Effect 化后迭代很快,拖得越久合并面越陡。
+建议每一至两周同步一次。机械部分(fetch、merge、清理已删除包路径下复活的文件、install、typecheck、两层测试)已经写成 `bun run sync-upstream`(`script/sync-upstream.ts`):
+
+```sh
+bun run sync-upstream
+```
+
+脚本能自动处理的:README.md 冲突(固定保留 ours)、已删除的 15 个包路径下的冲突或静默复活(固定接受删除)、后续的 install/typecheck/测试验证。脚本处理不了、会直接停下并列出文件名的:五个编排层插入点(`registry.ts`/`prompt.ts`/`agent.ts`/`opencode/package.json`/以及任何非上述已知模式的冲突)——这些需要对照本文档上一节的"合并面清单"手动解决,`git add` 后重新跑一次脚本(会跳过已完成的 merge 直接继续)。脚本跑完之后还差两件事它做不了:手工冒烟(搜索一篇论文、派 reader)、把回归结果追记进下面的"回归基线"节,再 `git push origin dev`。
+
+上游 Effect 化后迭代很快,拖得越久合并面越陡,别攒太久。
 
 ## 发布前清单
 
